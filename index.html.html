@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reporte de Uso de Tóneres</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- PapaParse for CSV parsing -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-slate-50 min-h-screen text-slate-800 font-sans antialiased">
+
+  <!-- Header / Navigation -->
+  <header class="bg-indigo-900 text-white shadow-md sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col md:flex-row justify-between items-center gap-4">
+      <div class="flex items-center space-x-3">
+        <div class="bg-indigo-700 p-2.5 rounded-xl shadow-inner">
+          <i class="fa-solid fa-print text-2xl text-cyan-400"></i>
+        </div>
+        <div>
+          <h1 class="text-xl font-bold tracking-tight">Control de Tóneres e Impresoras</h1>
+          <p class="text-xs text-indigo-200">Panel de Monitoreo de Consumibles</p>
+        </div>
+      </div>
+      
+      <div class="flex items-center gap-3 w-full md:w-auto justify-end">
+        <button id="btnReload" onclick="loadData()" class="flex items-center gap-2 bg-indigo-700 hover:bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition shadow-sm border border-indigo-500/30">
+          <i class="fa-solid fa-rotate-right" id="reloadIcon"></i>
+          <span>Actualizar Datos</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+
+    <!-- Status Banner / Messages -->
+    <div id="statusAlert" class="hidden rounded-xl p-4 transition-all duration-300">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+          <i id="statusIcon" class="text-xl"></i>
+          <div>
+            <h3 id="statusTitle" class="font-semibold text-sm"></h3>
+            <p id="statusDesc" class="text-xs mt-0.5 opacity-90"></p>
+          </div>
+        </div>
+        <button onclick="dismissStatus()" class="text-slate-400 hover:text-slate-600">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Loading Skeleton Indicator -->
+    <div id="loadingIndicator" class="flex flex-col items-center justify-center py-16 bg-white rounded-2xl shadow-sm border border-slate-200/80">
+      <div class="relative flex items-center justify-center mb-4">
+        <div class="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+        <i class="fa-solid fa-print text-indigo-600 absolute text-sm"></i>
+      </div>
+      <p class="text-sm font-semibold text-slate-700">Obteniendo datos de Google Sheets...</p>
+      <p class="text-xs text-slate-400 mt-1">Sincronizando información en tiempo real</p>
+    </div>
+
+    <!-- Main Content Container -->
+    <div id="mainContent" class="hidden space-y-6">
+
+      <!-- Summary KPI Cards -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" id="kpiCards">
+        <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Registros</p>
+            <h3 id="statTotalRows" class="text-2xl font-bold text-slate-800 mt-1">0</h3>
+          </div>
+          <div class="p-3 bg-blue-50 text-blue-600 rounded-xl">
+            <i class="fa-solid fa-list-check text-xl"></i>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Columnas Detectadas</p>
+            <h3 id="statTotalCols" class="text-2xl font-bold text-slate-800 mt-1">0</h3>
+          </div>
+          <div class="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
+            <i class="fa-solid fa-table-columns text-xl"></i>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Estado Conexión</p>
+            <h3 id="statSource" class="text-sm font-bold text-emerald-600 mt-1 truncate max-w-[140px]">Directo</h3>
+          </div>
+          <div class="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
+            <i class="fa-solid fa-signal text-xl"></i>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Última Carga</p>
+            <h3 id="statLastUpdate" class="text-sm font-bold text-slate-700 mt-1">--:--</h3>
+          </div>
+          <div class="p-3 bg-purple-50 text-purple-600 rounded-xl">
+            <i class="fa-regular fa-clock text-xl"></i>
+          </div>
+        </div>
+      </div>
+
+      <!-- Data Table Section -->
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <!-- Table Controls Header -->
+        <div class="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/50 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div class="relative w-full md:w-80">
+            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+            <input type="text" id="searchInput" oninput="handleSearch()" placeholder="Buscar en el reporte..." class="w-full pl-9 pr-4 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition">
+          </div>
+
+          <div class="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end text-xs text-slate-500">
+            <span id="recordCount">Mostrando 0 registros</span>
+            <button onclick="exportToCSV()" class="flex items-center gap-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1.5 rounded-lg font-medium transition">
+              <i class="fa-solid fa-download"></i>
+              Exportar
+            </button>
+          </div>
+        </div>
+
+        <!-- Table View -->
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr id="tableHeader" class="bg-slate-100/80 text-slate-600 font-semibold uppercase tracking-wider border-b border-slate-200">
+                <!-- Headers populated dynamically -->
+              </tr>
+            </thead>
+            <tbody id="tableBody" class="divide-y divide-slate-100 text-slate-700">
+              <!-- Rows populated dynamically -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination Footer -->
+        <div class="p-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+          <div>
+            Página <span id="currentPageNum" class="font-bold text-slate-700">1</span> de <span id="totalPagesNum" class="font-bold text-slate-700">1</span>
+          </div>
+          <div class="flex items-center space-x-2">
+            <button id="btnPrevPage" onclick="changePage(-1)" class="px-3 py-1.5 rounded bg-slate-100 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition">
+              Anterior
+            </button>
+            <button id="btnNextPage" onclick="changePage(1)" class="px-3 py-1.5 rounded bg-slate-100 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition">
+              Siguiente
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <script>
+    // Primary Google Sheets CSV URL provided by user
+    const RAW_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQmlZtcgCC3Sj7eHzjOQY1qjtmyMeEbt5hTIHj6BRBggYDlJ6NGx33MTWOle8lXH9JsHM2bYXf9w2RF/pub?gid=0&single=true&output=csv';
+
+    // CORS Proxies fallback mechanism for fetching via alternate channels if direct stream fails
+    const PROXIES = [
+      url => url, // Direct URL
+      url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+      url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+      url => `https://thingproxy.freeboard.io/fetch/${url}`
+    ];
+
+    let rawData = [];
+    let filteredData = [];
+    let columns = [];
+    let currentPage = 1;
+    const pageSize = 15;
+
+    // Helper to normalize strings (remove accents & lowercase)
+    function normalizeStr(str) {
+      return String(str || '')
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .trim();
+    }
+
+    // Single color badge generator helper
+    function getSingleColorBadge(type, labelText) {
+      if (type === 'black') {
+        return `<div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-900 text-slate-100 border border-slate-800 shadow-sm my-0.5">
+                  <span class="w-3 h-3 rounded-full bg-black border border-slate-600 shadow-inner inline-block"></span>
+                  <span>${labelText}</span>
+                </div>`;
+      }
+      if (type === 'cyan') {
+        return `<div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-50 text-sky-800 border border-sky-300 shadow-sm my-0.5">
+                  <span class="w-3 h-3 rounded-full bg-sky-500 border border-sky-600 shadow-inner inline-block"></span>
+                  <span>${labelText}</span>
+                </div>`;
+      }
+      if (type === 'magenta') {
+        return `<div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-800 border border-rose-300 shadow-sm my-0.5">
+                  <span class="w-3 h-3 rounded-full bg-rose-600 border border-rose-700 shadow-inner inline-block"></span>
+                  <span>${labelText}</span>
+                </div>`;
+      }
+      if (type === 'yellow') {
+        return `<div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-950 border border-amber-300 shadow-sm my-0.5">
+                  <span class="w-3 h-3 rounded-full bg-yellow-400 border border-amber-500 shadow-inner inline-block"></span>
+                  <span>${labelText}</span>
+                </div>`;
+      }
+      return labelText;
+    }
+
+    // Comprehensive formatting function supporting single AND multiple combined colors (e.g., "Magenta y Amarillo")
+    function formatColorCell(value) {
+      if (!value && value !== 0) return '';
+      const originalStr = String(value).trim();
+      const norm = normalizeStr(originalStr);
+
+      // Check if text contains color keywords
+      const hasBlack = norm.includes('negro') || norm.includes('black') || norm === 'k' || norm === 'bk';
+      const hasCyan = norm.includes('cyan') || norm.includes('cian') || norm === 'c' || norm.includes('azul');
+      const hasMagenta = norm.includes('magenta') || norm.includes('rosado') || norm.includes('rosa') || norm === 'm';
+      const hasYellow = norm.includes('amarillo') || norm.includes('yellow') || norm === 'y';
+
+      // Count how many distinct colors were matched
+      const colorMatches = [];
+      if (hasBlack) colorMatches.push({ type: 'black', label: 'Negro' });
+      if (hasCyan) colorMatches.push({ type: 'cyan', label: 'Cyan' });
+      if (hasMagenta) colorMatches.push({ type: 'magenta', label: 'Magenta' });
+      if (hasYellow) colorMatches.push({ type: 'yellow', label: 'Amarillo' });
+
+      // If no color keywords matched, return original text
+      if (colorMatches.length === 0) {
+        return originalStr;
+      }
+
+      // If exactly 1 color matched and it equals or represents the cell, preserve exact text label
+      if (colorMatches.length === 1 && !originalStr.includes(' y ') && !originalStr.includes(',') && !originalStr.includes('&')) {
+        return getSingleColorBadge(colorMatches[0].type, originalStr);
+      }
+
+      // If multiple colors are present, render a flex container with all badges
+      const badgesHtml = colorMatches
+        .map(match => getSingleColorBadge(match.type, match.label))
+        .join(' ');
+
+      return `<div class="flex flex-wrap items-center gap-1.5">${badgesHtml}</div>`;
+    }
+
+    // Initialize on window load
+    window.onload = function() {
+      loadData();
+    };
+
+    // Load data using Papa.parse download mode across multiple endpoints for max reliability
+    function tryLoadDataWithProxy(proxyIndex = 0) {
+      if (proxyIndex >= PROXIES.length) {
+        showLoading(false);
+        const reloadIcon = document.getElementById('reloadIcon');
+        if (reloadIcon) reloadIcon.classList.remove('animate-spin');
+        showStatus(
+          'Error al cargar los datos', 
+          'No se pudo acceder a la hoja de cálculo. Verifica que el enlace esté publicado en la web con permisos de lectura pública.',
+          'error'
+        );
+        return;
+      }
+
+      const targetUrl = PROXIES[proxyIndex](RAW_CSV_URL);
+
+      Papa.parse(targetUrl, {
+        download: true,
+        header: true,
+        skipEmptyLines: true,
+        complete: function(results) {
+          const reloadIcon = document.getElementById('reloadIcon');
+          if (reloadIcon) reloadIcon.classList.remove('animate-spin');
+
+          if (!results.data || results.data.length === 0) {
+            // Try next proxy
+            tryLoadDataWithProxy(proxyIndex + 1);
+            return;
+          }
+
+          showLoading(false);
+          rawData = results.data;
+          filteredData = [...rawData];
+          columns = results.meta.fields || Object.keys(rawData[0] || {});
+
+          const sourceText = proxyIndex === 0 ? 'Directo (Google)' : `Vía Proxy ${proxyIndex}`;
+          document.getElementById('statSource').textContent = sourceText;
+          document.getElementById('statLastUpdate').textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+          renderSummaryKPIs();
+          renderTable();
+          
+          document.getElementById('mainContent').classList.remove('hidden');
+          
+          showStatus(
+            'Datos cargados correctamente', 
+            `Se han procesado ${rawData.length} registros y ${columns.length} columnas con éxito.`,
+            'success'
+          );
+        },
+        error: function(err) {
+          console.warn(`Intento ${proxyIndex + 1} falló:`, err);
+          tryLoadDataWithProxy(proxyIndex + 1);
+        }
+      });
+    }
+
+    function loadData() {
+      showLoading(true);
+      dismissStatus();
+      
+      const reloadIcon = document.getElementById('reloadIcon');
+      if (reloadIcon) reloadIcon.classList.add('animate-spin');
+
+      tryLoadDataWithProxy(0);
+    }
+
+    // Single color badge generator helper
+    function getSingleColorBadge(type, labelText) {
+      if (type === 'black') {
+        return `<div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-900 text-slate-100 border border-slate-800 shadow-sm my-0.5">
+                  <span class="w-3 h-3 rounded-full bg-black border border-slate-600 shadow-inner inline-block"></span>
+                  <span>${labelText}</span>
+                </div>`;
+      }
+      if (type === 'cyan') {
+        return `<div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-50 text-sky-800 border border-sky-300 shadow-sm my-0.5">
+                  <span class="w-3 h-3 rounded-full bg-sky-500 border border-sky-600 shadow-inner inline-block"></span>
+                  <span>${labelText}</span>
+                </div>`;
+      }
+      if (type === 'magenta') {
+        return `<div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-800 border border-rose-300 shadow-sm my-0.5">
+                  <span class="w-3 h-3 rounded-full bg-rose-600 border border-rose-700 shadow-inner inline-block"></span>
+                  <span>${labelText}</span>
+                </div>`;
+      }
+      if (type === 'yellow') {
+        return `<div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-950 border border-amber-300 shadow-sm my-0.5">
+                  <span class="w-3 h-3 rounded-full bg-yellow-400 border border-amber-500 shadow-inner inline-block"></span>
+                  <span>${labelText}</span>
+                </div>`;
+      }
+      return labelText;
+    }
+
+    // Comprehensive formatting function supporting single AND multiple combined colors (e.g., "Magenta y Amarillo")
+    function formatColorCell(value) {
+      if (!value && value !== 0) return '';
+      const originalStr = String(value).trim();
+      const norm = normalizeStr(originalStr);
+
+      // Check if text contains color keywords
+      const hasBlack = norm.includes('negro') || norm.includes('black') || norm === 'k' || norm === 'bk';
+      const hasCyan = norm.includes('cyan') || norm.includes('cian') || norm === 'c' || norm.includes('azul');
+      const hasMagenta = norm.includes('magenta') || norm.includes('rosado') || norm.includes('rosa') || norm === 'm';
+      const hasYellow = norm.includes('amarillo') || norm.includes('yellow') || norm === 'y';
+
+      // Count how many distinct colors were matched
+      const colorMatches = [];
+      if (hasBlack) colorMatches.push({ type: 'black', label: 'Negro' });
+      if (hasCyan) colorMatches.push({ type: 'cyan', label: 'Cyan' });
+      if (hasMagenta) colorMatches.push({ type: 'magenta', label: 'Magenta' });
+      if (hasYellow) colorMatches.push({ type: 'yellow', label: 'Amarillo' });
+
+      // If no color keywords matched, return original text
+      if (colorMatches.length === 0) {
+        return originalStr;
+      }
+
+      // If exactly 1 color matched and it equals or represents the cell, preserve exact text label
+      if (colorMatches.length === 1 && !originalStr.includes(' y ') && !originalStr.includes(',') && !originalStr.includes('&')) {
+        return getSingleColorBadge(colorMatches[0].type, originalStr);
+      }
+
+      // If multiple colors are present (e.g., "Magenta y Amarillo" on 22/10/2026), render a flex container with all badges
+      const badgesHtml = colorMatches
+        .map(match => getSingleColorBadge(match.type, match.label))
+        .join(' ');
+
+      return `<div class="flex flex-wrap items-center gap-1.5">${badgesHtml}</div>`;
+    }
+
+    // Helper to check if a column or value represents a toner color
+    function isColorColumnOrValue(colName, val) {
+      const colNorm = normalizeStr(colName);
+      const valNorm = normalizeStr(val);
+
+      // Check column header hints
+      if (colNorm.includes('color') || colNorm.includes('toner') || colNorm.includes('consumible') || colNorm.includes('cartucho')) {
+        return true;
+      }
+
+      // Check standard color keywords inside values
+      const colorKeywords = [
+        'negro', 'black', 'k', 'bk', 
+        'cyan', 'cian', 'c', 
+        'magenta', 'm', 
+        'amarillo', 'yellow', 'y'
+      ];
+      return colorKeywords.some(kw => valNorm === kw || valNorm.includes(kw));
+    }
+
+    // Initialize on window load
+    window.onload = function() {
+      loadData();
+    };
+
+    // Main fetch function with fallback handling
+    async function loadData() {
+      showLoading(true);
+      dismissStatus();
+      
+      const reloadIcon = document.getElementById('reloadIcon');
+      if (reloadIcon) reloadIcon.classList.add('animate-spin');
+
+      let fetchedCsvText = null;
+      let usedProxyIndex = -1;
+
+      // Try each proxy strategy until one succeeds
+      for (let i = 0; i < PROXIES.length; i++) {
+        try {
+          const targetUrl = PROXIES[i](RAW_CSV_URL);
+          const response = await fetch(targetUrl, { cache: 'no-store' });
+          if (response.ok) {
+            fetchedCsvText = await response.text();
+            usedProxyIndex = i;
+            break;
+          }
+        } catch (e) {
+          console.warn(`Intento ${i + 1} de conexión falló:`, e);
+        }
+      }
+
+      if (reloadIcon) reloadIcon.classList.remove('animate-spin');
+
+      if (!fetchedCsvText || fetchedCsvText.trim().length === 0) {
+        showLoading(false);
+        showStatus(
+          'Error al cargar los datos', 
+          'No se pudo acceder a la hoja de cálculo. Verifica que el enlace esté publicado en la web con permisos de lectura pública.',
+          'error'
+        );
+        return;
+      }
+
+      // Parse CSV Data
+      Papa.parse(fetchedCsvText, {
+        header: true,
+        skipEmptyLines: true,
+        complete: function(results) {
+          showLoading(false);
+          
+          if (!results.data || results.data.length === 0) {
+            showStatus('Hoja Vacía', 'La hoja de cálculo fue leída pero no contiene filas de datos.', 'warning');
+            return;
+          }
+
+          rawData = results.data;
+          filteredData = [...rawData];
+          columns = results.meta.fields || Object.keys(rawData[0] || {});
+
+          // Display success status & update interface
+          const sourceText = usedProxyIndex === 0 ? 'Conexión Directa' : `Vía Proxy (${usedProxyIndex})`;
+          document.getElementById('statSource').textContent = sourceText;
+          document.getElementById('statLastUpdate').textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+          renderSummaryKPIs();
+          renderTable();
+          
+          document.getElementById('mainContent').classList.remove('hidden');
+          
+          showStatus(
+            'Datos cargados correctamente', 
+            `Se han procesado ${rawData.length} registros y ${columns.length} columnas con éxito.`,
+            'success'
+          );
+        },
+        error: function(err) {
+          showLoading(false);
+          showStatus('Error al procesar el archivo CSV', err.message, 'error');
+        }
+      });
+    }
+
+    // Render KPI Metrics
+    function renderSummaryKPIs() {
+      document.getElementById('statTotalRows').textContent = rawData.length;
+      document.getElementById('statTotalCols').textContent = columns.length;
+    }
+
+    // Render Table Rows with Pagination
+    function renderTable() {
+      const thead = document.getElementById('tableHeader');
+      const tbody = document.getElementById('tableBody');
+      
+      // Render Header
+      thead.innerHTML = columns.map(col => `<th class="px-4 py-3">${col}</th>`).join('');
+
+      // Pagination bounds
+      const totalPages = Math.ceil(filteredData.length / pageSize) || 1;
+      if (currentPage > totalPages) currentPage = totalPages;
+      
+      const start = (currentPage - 1) * pageSize;
+      const end = start + pageSize;
+      const pageData = filteredData.slice(start, end);
+
+      // Render Rows
+      if (pageData.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="${columns.length}" class="px-4 py-8 text-center text-slate-400">
+              No se encontraron registros coincidentes.
+            </td>
+          </tr>
+        `;
+      } else {
+        tbody.innerHTML = pageData.map(row => {
+          return `<tr class="hover:bg-indigo-50/40 transition">
+            ${columns.map((col, idx) => {
+              const val = row[col] !== undefined ? String(row[col]) : '';
+              const isFirst = idx === 0;
+              const formattedValue = formatColorCell(val);
+              return `<td class="px-4 py-2.5 ${isFirst ? 'font-semibold text-slate-800' : 'text-slate-600'} whitespace-nowrap">${formattedValue}</td>`;
+            }).join('')}
+          </tr>`;
+        }).join('');
+      }
+
+      // Update Pagination UI
+      document.getElementById('currentPageNum').textContent = currentPage;
+      document.getElementById('totalPagesNum').textContent = totalPages;
+      document.getElementById('recordCount').textContent = `Mostrando ${filteredData.length} registros`;
+
+      document.getElementById('btnPrevPage').disabled = currentPage <= 1;
+      document.getElementById('btnNextPage').disabled = currentPage >= totalPages;
+    }
+
+    function changePage(delta) {
+      const totalPages = Math.ceil(filteredData.length / pageSize) || 1;
+      const newPage = currentPage + delta;
+      if (newPage >= 1 && newPage <= totalPages) {
+        currentPage = newPage;
+        renderTable();
+      }
+    }
+
+    function handleSearch() {
+      const query = normalizeStr(document.getElementById('searchInput').value);
+      if (!query) {
+        filteredData = [...rawData];
+      } else {
+        filteredData = rawData.filter(row => {
+          return columns.some(col => normalizeStr(row[col]).includes(query));
+        });
+      }
+      currentPage = 1;
+      renderTable();
+    }
+
+    function exportToCSV() {
+      if (!filteredData.length) return;
+      const csv = Papa.unparse(filteredData);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.setAttribute('download', `reporte_toners_${new Date().toISOString().slice(0,10)}.csv`);
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+
+    function showLoading(show) {
+      const loader = document.getElementById('loadingIndicator');
+      if (show) {
+        loader.classList.remove('hidden');
+      } else {
+        loader.classList.add('hidden');
+      }
+    }
+
+    // Status Alert Utility
+    function showStatus(title, message, type = 'info') {
+      const alert = document.getElementById('statusAlert');
+      const icon = document.getElementById('statusIcon');
+      const titleEl = document.getElementById('statusTitle');
+      const descEl = document.getElementById('statusDesc');
+
+      alert.className = 'rounded-xl p-4 transition-all duration-300 flex items-center justify-between ';
+
+      if (type === 'error') {
+        alert.classList.add('bg-rose-50', 'border', 'border-rose-200', 'text-rose-800');
+        icon.className = 'fa-solid fa-circle-exclamation text-rose-500';
+      } else if (type === 'warning') {
+        alert.classList.add('bg-amber-50', 'border', 'border-amber-200', 'text-amber-800');
+        icon.className = 'fa-solid fa-triangle-exclamation text-amber-500';
+      } else if (type === 'success') {
+        alert.classList.add('bg-emerald-50', 'border', 'border-emerald-200', 'text-emerald-800');
+        icon.className = 'fa-solid fa-circle-check text-emerald-500';
+      } else {
+        alert.classList.add('bg-blue-50', 'border', 'border-blue-200', 'text-blue-800');
+        icon.className = 'fa-solid fa-circle-info text-blue-500';
+      }
+
+      titleEl.textContent = title;
+      descEl.textContent = message;
+      alert.classList.remove('hidden');
+    }
+
+    function dismissStatus() {
+      document.getElementById('statusAlert').classList.add('hidden');
+    }
+  </script>
+</body>
+</html>
